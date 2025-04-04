@@ -1,15 +1,20 @@
 import torch
-from torch import nn, distributions, exp, log
+from matplotlib.pyplot import xlabel, ylabel, title
+from torch import nn, autograd, distributions, exp, log
 import numpy as np
 import pandas as pd
 from datetime import timedelta
 from torch.utils.data import Dataset, DataLoader
 import os
+import gc
+import matplotlib.pyplot as plt
+from alive_progress import alive_bar
 
 pd.set_option('future.no_silent_downcasting', True) # pandas is getting rid of fillna in the future
-totalSyscalls = 457
-emb_dim = 100 # HyperParameter
-seq_len = 2000 # HyperParameter
+totalSyscalls = 456
+newFile = 0
+emb_dim = 40 # HyperParameter (20 on AIAV)
+seq_len = 30 # HyperParameter (100 on LAIAV)
 
 class AIAV(nn.Module):
     class Encoder(nn.Module):
@@ -26,10 +31,10 @@ class AIAV(nn.Module):
             )
         def encode(self, x):
             x = x.reshape((1, self.seq_len, self.inp))
-            final, (hidden, cells) = self.model(x)  # Outputs Final, (hidden, cells)
+            x, (hidden, _) = self.model(x)  # Outputs Final, (hidden, cells)
             # We want the hidden layer because we will be reconstructing the model from it
-            # Hidden is a 1xemb_dim torch tensor. We will be using this to reconstruct the input
-            return hidden.squeeze()
+            out = hidden.squeeze(1)
+            return out
     class Decoder(nn.Module):
         def __init__(self, seq_len, emb_dim):
             super().__init__()
@@ -43,7 +48,8 @@ class AIAV(nn.Module):
             )
         def decode(self, x):
             x = x.repeat(self.seq_len, 1) # For every sequence
-            x, (_, _) = self.model(x) # x now is the reconstructed representations of the sequences
+            x = x.reshape((self.seq_len, self.inp))
+            x, hidden = self.model(x) # x now is the reconstructed representations of the sequences
             return x
     def __init__(self, seq_len, emb_dim):
         super().__init__()
@@ -53,6 +59,12 @@ class AIAV(nn.Module):
         hidden = self.encoder.encode(x) # Outputs Final, (hidden, cells)
         out = self.decoder.decode(hidden)
         return out
+    def save(self):
+        torch.save(self.state_dict(), './v2SLAIAVMODEL.pt')
+    def to(self, device):
+        self.encoder = self.encoder.to(device)
+        self.decoder = self.decoder.to(device)
+
 
 class SysData(Dataset):
     def updateData(self):
@@ -62,9 +74,10 @@ class SysData(Dataset):
                 self.read = pd.read_csv(f'{self.dirname}/zpoline_syscalls_{self.fidx}.csv', chunksize=seq_len)
                 self.fidx += 1
                 self.cidx = 0
+                #print("First")
             data = next(self.read)
             if len(data) < seq_len:
-                print('NEXT FILE')
+                #print('NEXT FILE')
                 self.read = pd.read_csv(f'{self.dirname}/zpoline_syscalls_{self.fidx}.csv', chunksize=seq_len)
                 data = next(self.read)
                 self.fidx += 1
@@ -75,12 +88,13 @@ class SysData(Dataset):
         data = data.drop(columns=['PID']) # FOR NOW
         data['TIMESTAMP'] = pd.to_datetime(data['TIMESTAMP'])
         data['TIMESTAMP'] = data['TIMESTAMP'].diff().fillna(timedelta(0)).apply(lambda x: x / timedelta(microseconds=1))
-        syscalls = pd.DataFrame(columns=range(458), index=range(len(data)))
+        syscalls = pd.DataFrame(columns=range(totalSyscalls + 1), index=range(len(data)))
         syscalls = syscalls.fillna(0)
         for i in range(len(data)):
             syscalls.iloc[i, [data['SYSCALL_NUMBER'][i + seq_len*self.cidx]]] = 1
-            syscalls.iloc[i, -1] = data['TIMESTAMP'][i + seq_len*self.cidx]
+            #syscalls.iloc[i, -1] = data['TIMESTAMP'][i + seq_len*self.cidx]
         self.data = syscalls
+        gc.collect()
     def getLen(self):
         self.len = 0
         for i in range(len(os.listdir(self.dirname))):
@@ -102,37 +116,86 @@ class SysData(Dataset):
             return None
 
 if __name__=="__main__":
+    print(torch.cuda.is_available())
     rnn = AIAV(seq_len, emb_dim)
-    #data = getData('zpoline_syscalls.csv')
+    rnn.load_state_dict(torch.load('AIAV_v2_MODEL.pt'))
+    rnn.to("cuda:0")
     data = SysData('slideshow_syscalls')
-    test = SysData('slideshow_syscalls')
+    test = SysData('slideshow_syscalls_test')
     tload = DataLoader(test)
     load = DataLoader(data)
     # Training Doers
-    optimizer = torch.optim.Adam(rnn.parameters(), lr=1e-3) # lr is a HyperParameter, but not that important as long as nothing "explodes"
-    lossFunc = nn.L1Loss(reduction='sum') # Sum differences
-
+    optimizer = torch.optim.Adam(rnn.parameters(), lr=0.05) # lr is a HyperParameter, but not that important as long as nothing "explodes"
+    lossFunc = nn.MSELoss(reduction='sum') # Sum differences
     ls = []
     testls = []
     rnn.train()
-    for inp in iter(load):
-        out = rnn.forward(inp)
-        inp = inp.squeeze() # Undoes the batch layer
-        loss = lossFunc(out, inp)
-        optimizer.zero_grad() # If not included, as this loops previous grads will leak into next update
-        loss.backward() # Calculate the gradients
-        optimizer.step() # Update the weights
-        ls.append(loss.item())
-    rnn.eval()
-    with torch.no_grad():
-        for inp in iter(tload):
-            out = rnn.forward(inp)
+    i = 0
+    with alive_bar(10001, force_tty=True) as bar:
+        for inp in iter(load):
+            break
             inp = inp.squeeze()  # Undoes the batch layer
+            inp = inp.to("cuda:0")
+            out = rnn.forward(inp)
             loss = lossFunc(out, inp)
-            testls.append(loss.item())
-    train_loss = np.mean(ls)
+            optimizer.zero_grad() # If not included, as this loops previous grads will leak into next update
+            loss.backward() # Calculate the gradients
+            optimizer.step() # Update the weights
+            ls.append(loss.item())
+            i += 1
+            bar()
+            if i > 10000:
+                break
+    #rnn.save()
+    rnn.eval()
+    i= 0
+    with alive_bar(51, force_tty=True) as bar:
+        with torch.no_grad():
+            for inp in iter(tload):
+                if inp is None:
+                    break
+                inp = inp.to("cuda:0")
+                out = rnn.forward(inp)
+                inp = inp.squeeze()  # Undoes the batch layer
+                loss = lossFunc(out, inp)
+                testls.append(loss.item())
+                i += 1
+                bar()
+                if i > 50:
+                    break
+    #train_loss = np.mean(ls)
+    bload = SysData('badMacro_syscalls')
+    badls = []
+    i = 0
+    with alive_bar(51, force_tty=True) as bar:
+        with torch.no_grad():
+            for inp in iter(bload):
+                if inp is None:
+                    break
+                inp = inp.to("cuda:0")
+                out = rnn.forward(inp)
+                inp = inp.squeeze()  # Undoes the batch layer
+                loss = lossFunc(out, inp)
+                badls.append(loss.item())
+                if loss < 25:
+                    for j in range(len(inp)):
+                        for k in range(len(inp[j])):
+                            if inp[j][k] == 1:
+                                print(k)
+                                print(out[j][k])
+                i += 1
+                bar()
+                if i > 50:
+                    break
+    #print(i, "bad iterations")
     test_loss = np.mean(testls)
-    print(train_loss, test_loss)
-#TODO: Train!
-#TODO: Write the train/test split
-
+    badLoss = np.mean(badls)
+    print(test_loss, "<", badLoss)
+    #print(test_loss, train_loss)
+    plt.plot(badls, label="Virus")
+    plt.plot(testls, label="Not Virus")
+    xlabel("Sequence Number")
+    ylabel("Model Loss")
+    title("Loss vs. Sequence for Virus and Not Virus files")
+    plt.legend()
+    plt.show()
